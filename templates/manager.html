@@ -2,118 +2,177 @@
 <html>
 <head>
     <title>Manager Panel</title>
-    <link
-        rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
-    >
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+
+    <style>
+        body {
+            background: #f4f6fb;
+        }
+        .card {
+            border-radius: 16px;
+            box-shadow: 0 8px 20px rgba(0,0,0,.05);
+        }
+        .deleted-row {
+            background:#ffe5e5 !important;
+            color:#a30000;
+            text-decoration: line-through;
+        }
+    </style>
 </head>
-<body class="bg-light">
 
-<nav class="navbar navbar-dark bg-dark px-3">
-    <span class="navbar-brand">Manager Panel</span>
-    <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">
-        Logout
-    </a>
-</nav>
+<body class="p-4">
 
-<div class="container py-4">
+<div class="container">
 
-    <h4>Monthly Summary</h4>
+    <div class="d-flex justify-content-between mb-3">
+        <h2>Manager Panel</h2>
+        <a class="btn btn-outline-dark" href="{{ url_for('logout') }}">Logout</a>
+    </div>
 
-    <div class="row mb-4">
-        <div class="col-md-4">
-            <div class="card p-3 shadow-sm">
-                <strong>Total Revenue:</strong>
-                <h4>{{ "%.2f"|format(revenue) }}</h4>
-            </div>
-        </div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{cat}}">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
 
-        <div class="col-md-4">
-            <div class="card p-3 shadow-sm">
-                <strong>Total Expenses:</strong>
-                <h4>{{ "%.2f"|format(total_expenses) }}</h4>
-            </div>
-        </div>
 
-        <div class="col-md-4">
-            <div
-                class="card p-3 shadow-sm
-                {% if profit >= 0 %}border-success text-success{% else %}border-danger text-danger{% endif %}"
-            >
-                <strong>Profit:</strong>
-                <h4>{{ "%.2f"|format(profit) }}</h4>
-            </div>
+    <!-- ITEMS -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5>Add Item</h5>
+
+            <form method="POST" action="{{ url_for('manager_add_item') }}" class="row g-2">
+                <div class="col-md-4">
+                    <input class="form-control" name="name" placeholder="Item name" required>
+                </div>
+                <div class="col-md-3">
+                    <input class="form-control" name="price" placeholder="Price" type="number" step="0.01" required>
+                </div>
+                <div class="col-md-3">
+                    <input class="form-control" name="stock" placeholder="Stock" type="number" required>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary w-100">Add</button>
+                </div>
+            </form>
+
+            <hr>
+
+            <table class="table table-hover">
+                <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Price</th>
+                    <th>Stock</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for item in items %}
+                    <tr>
+                        <td>{{ item.name }}</td>
+                        <td>{{ item.price }}</td>
+                        <td>{{ item.stock }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+
         </div>
     </div>
 
-    <h5>Expenses</h5>
-    <ul class="list-group mb-4">
-        {% for e in expenses %}
-            <li class="list-group-item d-flex justify-content-between">
-                <span>{{ e.name }}</span>
-                <span>{{ "%.2f"|format(e.amount) }}</span>
-            </li>
-        {% endfor %}
-    </ul>
 
-    <hr>
+    <!-- EXPENSES -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5>Add Expense</h5>
 
-    <h4>Inventory</h4>
-
-    <table class="table table-striped mt-3">
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Stock</th>
-                <th>Capital/unit</th>
-                <th>Selling price</th>
-                <th>Cashier bonus/unit</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for item in items %}
-            <tr>
-                <td>{{ item.name }}</td>
-                <td>{{ item.stock }}</td>
-                <td>{{ "%.2f"|format(item.capital_per_unit) }}</td>
-                <td>{{ "%.2f"|format(item.selling_price) }}</td>
-                <td>{{ "%.2f"|format(item.cashier_bonus) }}</td>
-                <td>
-                    <a href="{{ url_for('manager_delete_item', item_id=item.id) }}"
-                       class="btn btn-sm btn-danger">
-                        Delete
-                    </a>
-                </td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
-
-    <div class="card p-3 mt-4 shadow-sm">
-        <h5>Add Item</h5>
-        <form method="POST" action="{{ url_for('manager_add_item') }}">
-            <div class="row">
-                <div class="col-md-3">
-                    <input name="name" class="form-control" placeholder="Item name" required>
+            <form method="POST" action="{{ url_for('manager_add_expense') }}" class="row g-2">
+                <div class="col-md-6">
+                    <input class="form-control" name="name" placeholder="Expense name" required>
+                </div>
+                <div class="col-md-4">
+                    <input class="form-control" name="amount" placeholder="Amount" type="number" step="0.01" required>
                 </div>
                 <div class="col-md-2">
-                    <input name="stock" type="number" class="form-control" placeholder="Stock" required>
+                    <button class="btn btn-secondary w-100">Save</button>
                 </div>
-                <div class="col-md-2">
-                    <input name="capital" type="number" step="0.01" class="form-control" placeholder="Capital/unit" required>
-                </div>
-                <div class="col-md-2">
-                    <input name="selling" type="number" step="0.01" class="form-control" placeholder="Selling price" required>
-                </div>
-                <div class="col-md-2">
-                    <input name="bonus" type="number" step="0.01" class="form-control" placeholder="Bonus/unit" required>
-                </div>
-                <div class="col-md-1">
-                    <button class="btn btn-primary w-100">Add</button>
-                </div>
-            </div>
-        </form>
+            </form>
+
+            <hr>
+
+            <table class="table">
+                <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Amount</th>
+                    <th>Month</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for e in expenses %}
+                    <tr>
+                        <td>{{ e.name }}</td>
+                        <td>{{ e.amount }}</td>
+                        <td>{{ e.month }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+
+        </div>
+    </div>
+
+
+    <!-- SALES -->
+    <div class="card mb-5">
+        <div class="card-body">
+            <h5>Sales History</h5>
+
+            <table class="table table-bordered align-middle mt-3">
+                <thead class="table-light">
+                <tr>
+                    <th>#</th>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Price</th>
+                    <th>Cashier</th>
+                    <th>Date</th>
+                    <th>Undo</th>
+                </tr>
+                </thead>
+
+                <tbody>
+                {% for s in sales %}
+                    <tr class="{% if s.is_deleted %}deleted-row{% endif %}">
+                        <td>{{ s.id }}</td>
+                        <td>{{ s.item_name }}</td>
+                        <td>{{ s.quantity }}</td>
+                        <td>{{ s.price }}</td>
+                        <td>{{ s.cashier }}</td>
+                        <td>{{ s.date.strftime('%Y-%m-%d %H:%M') }}</td>
+
+                        <td>
+                            {% if not s.is_deleted %}
+                                <form method="POST"
+                                      action="{{ url_for('delete_sale', sale_id=s.id) }}"
+                                      onsubmit="return confirm('Undo this sale? Cashier bonus will be deducted.');">
+                                    <button class="btn btn-danger btn-sm">
+                                        Undo
+                                    </button>
+                                </form>
+                            {% else %}
+                                <span class="badge bg-secondary">Undone</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+
+            </table>
+        </div>
     </div>
 
 </div>
