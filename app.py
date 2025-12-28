@@ -6,90 +6,72 @@ import os
 app = Flask(__name__)
 app.secret_key = "secret123"
 
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///store.db"
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///glitz.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
+# ------------------ MODELS ------------------
 
-# --------------------
-# MODELS
-# --------------------
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(100), unique=True)
+    password = db.Column(db.String(100))
+    role = db.Column(db.String(20))   # cashier, manager
+
+
 class Item(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
+    name = db.Column(db.String(120))
+    price = db.Column(db.Float)
     stock = db.Column(db.Integer, default=0)
-    capital_per_unit = db.Column(db.Float, nullable=False)
-    selling_price = db.Column(db.Float, nullable=False)
-    cashier_bonus = db.Column(db.Float, default=0.0)   # custom peso bonus per unit
-
-
-class Sale(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    item_id = db.Column(db.Integer, db.ForeignKey("item.id"))
-    quantity = db.Column(db.Integer, nullable=False)
-    selling_price = db.Column(db.Float, nullable=False)
-    capital_per_unit = db.Column(db.Float, nullable=False)
-    cashier_bonus = db.Column(db.Float, nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class Expense(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100))
-    amount = db.Column(db.Float, nullable=False)
-    month = db.Column(db.String(20), nullable=False)   # YYYY-MM
+    name = db.Column(db.String(120))
+    amount = db.Column(db.Float)
+    month = db.Column(db.String(10))   # yyyy-mm
 
 
-# --------------------
-# CREATE DB + DEFAULT EXPENSES
-# --------------------
+class Sale(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    item_name = db.Column(db.String(120))
+    quantity = db.Column(db.Integer)
+    price = db.Column(db.Float)
+    cashier = db.Column(db.String(120))
+    date = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # ---- NEW FIELDS (undo sale) ----
+    is_deleted = db.Column(db.Boolean, default=False)
+    deleted_by = db.Column(db.String(120))
+    deleted_at = db.Column(db.DateTime)
+
+
 with app.app_context():
     db.create_all()
 
-    now = datetime.utcnow()
-    current_month = f"{now.year}-{now.month:02d}"
+# ------------------ AUTH ------------------
 
-    default_expenses = {
-        "Electricity": 6000,
-        "Water": 1000,
-        "Rent": 25000,
-        "BIR tax": 900,
-        "Munisipyo": 1000,
-    }
-
-    for name, amt in default_expenses.items():
-        exists = Expense.query.filter_by(name=name, month=current_month).first()
-        if not exists:
-            db.session.add(Expense(name=name, amount=amt, month=current_month))
-
-    db.session.commit()
-
-
-# --------------------
-# LOGIN
-# --------------------
-@app.route("/")
-def index():
-    return redirect(url_for("login"))
-
-
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form.get("username", "")
-        password = request.form.get("password", "")
+        username = request.form["username"]
+        password = request.form["password"]
+        role = request.form["role"]
 
-        if username == "manager" and password == "MarlaSchr":
-            session["role"] = "manager"
-            return redirect(url_for("manager_panel"))
+        user = User.query.filter_by(username=username, password=password, role=role).first()
 
-        if username == "cashier" and password == "Glitz":
-            session["role"] = "cashier"
-            return redirect(url_for("cashier_panel"))
+        if user:
+            session["username"] = username
+            session["role"] = role
+
+            if role == "manager":
+                return redirect(url_for("manager_panel"))
+            else:
+                return redirect(url_for("cashier_panel"))
 
         flash("Invalid credentials", "danger")
-        return redirect(url_for("login"))
 
     return render_template("login.html")
 
@@ -100,101 +82,15 @@ def logout():
     return redirect(url_for("login"))
 
 
-# --------------------
-# MANAGER PANEL
-# --------------------
-@app.route("/manager")
-def manager_panel():
-    if session.get("role") != "manager":
-        return redirect(url_for("login"))
+# ------------------ CASHIER ------------------
 
-    items = Item.query.all()
-
-    now = datetime.utcnow()
-    month = f"{now.year}-{now.month:02d}"
-
-    expenses = Expense.query.filter_by(month=month).all()
-    total_expenses = sum(e.amount for e in expenses)
-
-    sales = Sale.query.filter(
-        db.extract("year", Sale.timestamp) == now.year,
-        db.extract("month", Sale.timestamp) == now.month,
-    ).all()
-
-    revenue = sum(s.selling_price * s.quantity for s in sales)
-    profit = revenue - total_expenses
-
-    return render_template(
-        "manager.html",
-        items=items,
-        expenses=expenses,
-        revenue=revenue,
-        profit=profit,
-        total_expenses=total_expenses,
-    )
-
-
-@app.route("/manager/add_item", methods=["POST"])
-def manager_add_item():
-    if session.get("role") != "manager":
-        return redirect(url_for("login"))
-
-    name = request.form["name"]
-    stock = int(request.form["stock"])
-    capital = float(request.form["capital"])
-    selling = float(request.form["selling"])
-    bonus = float(request.form["bonus"])
-
-    db.session.add(
-        Item(
-            name=name,
-            stock=stock,
-            capital_per_unit=capital,
-            selling_price=selling,
-            cashier_bonus=bonus,
-        )
-    )
-    db.session.commit()
-
-    return redirect(url_for("manager_panel"))
-
-
-@app.route("/manager/delete_item/<int:item_id>")
-def manager_delete_item(item_id):
-    if session.get("role") != "manager":
-        return redirect(url_for("login"))
-
-    item = Item.query.get_or_404(item_id)
-    db.session.delete(item)
-    db.session.commit()
-
-    return redirect(url_for("manager_panel"))
-
-
-# --------------------
-# CASHIER PANEL
-# --------------------
 @app.route("/cashier")
 def cashier_panel():
     if session.get("role") != "cashier":
         return redirect(url_for("login"))
 
     items = Item.query.all()
-
-    now = datetime.utcnow()
-    month = now.month
-    year = now.year
-
-    sales = Sale.query.filter(
-        db.extract("year", Sale.timestamp) == year,
-        db.extract("month", Sale.timestamp) == month,
-    ).all()
-
-    total_bonus = sum(s.cashier_bonus * s.quantity for s in sales)
-
-    return render_template(
-        "cashier.html", items=items, sales=sales, total_bonus=total_bonus
-    )
+    return render_template("cashier.html", items=items)
 
 
 @app.route("/cashier/sell", methods=["POST"])
@@ -202,30 +98,113 @@ def cashier_sell():
     if session.get("role") != "cashier":
         return redirect(url_for("login"))
 
-    item_id = int(request.form["item_id"])
-    qty = int(request.form["quantity"])
+    item_id = request.form["item_id"]
+    quantity = int(request.form["quantity"])
 
-    item = Item.query.get_or_404(item_id)
+    item = Item.query.get(item_id)
 
-    if item.stock < qty:
+    if not item or item.stock < quantity:
         flash("Not enough stock!", "danger")
         return redirect(url_for("cashier_panel"))
 
-    sale = Sale(
-        item_id=item.id,
-        quantity=qty,
-        selling_price=item.selling_price,
-        capital_per_unit=item.capital_per_unit,
-        cashier_bonus=item.cashier_bonus,
-    )
+    item.stock -= quantity
 
-    item.stock -= qty
+    sale = Sale(
+        item_name=item.name,
+        quantity=quantity,
+        price=item.price,
+        cashier=session["username"]
+    )
 
     db.session.add(sale)
     db.session.commit()
 
+    flash("Sale recorded", "success")
     return redirect(url_for("cashier_panel"))
 
+
+# ------------------ MANAGER ------------------
+
+@app.route("/manager")
+def manager_panel():
+    if session.get("role") != "manager":
+        return redirect(url_for("login"))
+
+    items = Item.query.all()
+    sales = Sale.query.order_by(Sale.date.desc()).all()
+    expenses = Expense.query.all()
+
+    return render_template(
+        "manager.html",
+        items=items,
+        sales=sales,
+        expenses=expenses,
+    )
+
+
+@app.route("/manager/add-item", methods=["POST"])
+def manager_add_item():
+    if session.get("role") != "manager":
+        return redirect(url_for("login"))
+
+    name = request.form["name"]
+    price = float(request.form["price"])
+    stock = int(request.form["stock"])
+
+    item = Item(name=name, price=price, stock=stock)
+    db.session.add(item)
+    db.session.commit()
+
+    flash("Item added", "success")
+    return redirect(url_for("manager_panel"))
+
+
+@app.route("/manager/add-expense", methods=["POST"])
+def manager_add_expense():
+    if session.get("role") != "manager":
+        return redirect(url_for("login"))
+
+    name = request.form["name"]
+    amount = float(request.form["amount"])
+
+    month = f"{datetime.utcnow().year}-{datetime.utcnow().month:02d}"
+
+    expense = Expense(name=name, amount=amount, month=month)
+    db.session.add(expense)
+    db.session.commit()
+
+    flash("Expense saved", "success")
+    return redirect(url_for("manager_panel"))
+
+
+# ------------------ UNDO SALE (MANAGER ONLY) ------------------
+
+@app.route("/manager/delete-sale/<int:sale_id>", methods=["POST"])
+def delete_sale(sale_id):
+    if session.get("role") != "manager":
+        return "Unauthorized", 403
+
+    sale = Sale.query.get_or_404(sale_id)
+
+    sale.is_deleted = True
+    sale.deleted_by = session["username"]
+    sale.deleted_at = datetime.utcnow()
+
+    db.session.commit()
+
+    flash("Sale removed — cashier bonus updated.", "warning")
+    return redirect(url_for("manager_panel"))
+
+
+# ------------------ BONUS HELPER ------------------
+
+def calculate_bonus(cashier):
+    valid_sales = Sale.query.filter_by(cashier=cashier, is_deleted=False).all()
+    total = sum(s.price * s.quantity for s in valid_sales)
+    return total * 0.05   # change if needed
+
+
+# ------------------ RUN ------------------
 
 if __name__ == "__main__":
     app.run(debug=True)
