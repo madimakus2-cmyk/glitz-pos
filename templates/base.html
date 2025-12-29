@@ -1,93 +1,62 @@
 <!doctype html>
 <html>
 <head>
-  <title>{{ title if title else "Glitz" }}</title>
+  <title>{{ title if title else "Glitz POS" }}</title>
+
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+  >
+
   <style>
-    body {
-      font-family: "Segoe UI", system-ui, -apple-system;
-      background: #f6efe7;
-      margin: 0;
-      color: #3c3c3c;
+    body{
+      background:#f4f2ef;
+      font-family:"Segoe UI",system-ui;
     }
 
-    header {
-      background: linear-gradient(135deg, #d9c2a7, #f4e3cc);
-      padding: 14px 18px;
-      border-bottom: 1px solid #d6c4ae;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    .navbar{
+      background:linear-gradient(135deg,#c8b59c,#e9dcc8);
     }
 
-    header h1 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 600;
-      letter-spacing: .5px;
+    .card{
+      border-radius:14px;
+      box-shadow:0 8px 18px rgba(0,0,0,.06);
     }
 
-    .container {
-      max-width: 880px;
-      margin: 22px auto 40px;
-      padding: 0 14px;
-    }
-
-    .card {
-      background: #fffdf9;
-      padding: 14px 16px;
-      border-radius: 14px;
-      border: 1px solid #e3d8c7;
-      box-shadow: 0 8px 16px rgba(0,0,0,.04);
-      margin-bottom: 16px;
-    }
-
-    .title {
-      font-weight: 700;
-      font-size: 17px;
-      margin-bottom: 6px;
-      color: #5a4735;
-    }
-
-    .muted {
-      color: #7a6a58;
-      font-size: 13px;
-    }
-
-    button {
-      background: #d9bfa3;
-      border: 1px solid #cab198;
-      padding: 6px 10px;
-      border-radius: 10px;
-      cursor: pointer;
-    }
-    button:hover { background: #e4cdb7; }
-
-    .pill {
-      background: #eee2d5;
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 12px;
-      margin-left: 6px;
-    }
-
-    .green { color:#2f7a3b; }
-    .red { color:#ad3838; }
-
-    input {
-      border-radius: 10px;
-      border: 1px solid #d6c3ac;
-      padding: 5px 7px;
+    .page-title{
+      font-weight:700;
+      color:#5a4633;
     }
   </style>
 </head>
 
 <body>
 
-<header>
-  <h1>{{ page_header if page_header else "Glitz" }}</h1>
-</header>
+<nav class="navbar navbar-expand px-3">
+  <span class="fw-semibold">Glitz POS</span>
 
-<div class="container">
+  {% if session.user %}
+    <span class="ms-auto me-3 small text-muted">
+      Logged in as: {{ session.user }} ({{ session.role }})
+    </span>
+
+    <a href="{{ url_for('logout') }}" class="btn btn-outline-dark btn-sm">
+      Logout
+    </a>
+  {% endif %}
+</nav>
+
+<div class="container py-4">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
   {% block content %}{% endblock %}
 </div>
 
