@@ -80,7 +80,7 @@
         <tbody>
         {% for s in sales %}
             <tr>
-                <td>{{ s.item_id }}</td>
+                <td>{{ s.item.name }}</td>
                 <td>{{ s.quantity }}</td>
                 <td>{{ "%.2f"|format(s.selling_price) }}</td>
                 <td>{{ "%.2f"|format(s.cashier_bonus * s.quantity) }}</td>
