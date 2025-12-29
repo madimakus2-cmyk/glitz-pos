@@ -16,7 +16,7 @@ db = SQLAlchemy(app)
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(50))
+    username = db.Column(db.String(50), unique=True)
     password = db.Column(db.String(50))
     role = db.Column(db.String(20))
 
@@ -27,7 +27,7 @@ class Item(db.Model):
     stock = db.Column(db.Integer)
     capital_per_unit = db.Column(db.Float)
     selling_price = db.Column(db.Float)
-    cashier_bonus = db.Column(db.Float)   # pesos per unit bonus
+    cashier_bonus = db.Column(db.Float)
 
 
 class Sale(db.Model):
@@ -47,7 +47,6 @@ class Sale(db.Model):
 with app.app_context():
     db.create_all()
 
-    # Create default users only if not exists
     if not User.query.first():
         db.session.add(User(username="manager", password="1234", role="manager"))
         db.session.add(User(username="cashier", password="1234", role="cashier"))
@@ -69,7 +68,6 @@ def get_month_sales():
     return Sale.query.filter(Sale.timestamp >= start, Sale.timestamp <= end)
 
 
-# fixed monthly expenses
 MONTHLY_EXPENSES = {
     "Electricity": 6000,
     "Water": 1000,
@@ -86,9 +84,8 @@ def login():
     if request.method == "POST":
         username = request.form["username"]
         password = request.form["password"]
-        role = request.form["role"]
 
-        user = User.query.filter_by(username=username, password=password, role=role).first()
+        user = User.query.filter_by(username=username, password=password).first()
 
         if not user:
             flash("Invalid credentials", "danger")
@@ -97,7 +94,7 @@ def login():
         session["user"] = user.username
         session["role"] = user.role
 
-        if role == "manager":
+        if user.role == "manager":
             return redirect(url_for("manager_panel"))
         return redirect(url_for("cashier_panel"))
 
@@ -120,11 +117,9 @@ def manager_panel():
     items = Item.query.all()
     sales = get_month_sales().all()
 
-    # income & profit
     total_sales_amount = sum(s.selling_price * s.quantity for s in sales)
     total_cost = sum(s.item.capital_per_unit * s.quantity for s in sales)
     expenses_total = sum(MONTHLY_EXPENSES.values())
-
     total_profit = total_sales_amount - total_cost - expenses_total
 
     return render_template(
@@ -145,7 +140,7 @@ def add_item():
         stock=int(request.form["stock"]),
         capital_per_unit=float(request.form["capital"]),
         selling_price=float(request.form["price"]),
-        cashier_bonus=float(request.form["bonus"])
+        cashier_bonus=float(request.form["bonus"]),
     )
     db.session.add(item)
     db.session.commit()
@@ -159,13 +154,11 @@ def delete_sale(sale_id):
 
     sale = Sale.query.get_or_404(sale_id)
 
-    # restore stock
     sale.item.stock += sale.quantity
-
     db.session.delete(sale)
     db.session.commit()
 
-    flash("Sale removed and bonus undone.", "warning")
+    flash("Sale removed and bonus reversed.", "warning")
     return redirect(url_for("manager_panel"))
 
 
@@ -177,7 +170,6 @@ def cashier_panel():
         return redirect(url_for("login"))
 
     items = Item.query.all()
-
     sales = get_month_sales().filter_by(cashier_name=session["user"]).all()
 
     total_bonus = sum(s.cashier_bonus * s.quantity for s in sales)
@@ -219,3 +211,5 @@ def cashier_sell():
     return redirect(url_for("cashier_panel"))
 
 
+if __name__ == "__main__":
+    app.run(debug=True)
