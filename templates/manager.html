@@ -1,181 +1,97 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Manager Panel</title>
-    <link rel="stylesheet"
-          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
-
-    <style>
-        body {
-            background: #f4f6fb;
-        }
-        .card {
-            border-radius: 16px;
-            box-shadow: 0 8px 20px rgba(0,0,0,.05);
-        }
-        .deleted-row {
-            background:#ffe5e5 !important;
-            color:#a30000;
-            text-decoration: line-through;
-        }
-    </style>
+  <title>Manager Panel</title>
+  <style>
+    body { font-family: Arial; background:#111; color:#eee; }
+    .card { background:#1c1c1c; padding:20px; margin:10px; border-radius:14px; }
+    .green { color: #38f46a; }
+    .red { color: #ff5d5d; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { padding:8px; border-bottom: 1px solid #333; }
+    input { padding:6px; border-radius:8px; border:none; }
+    button { padding:6px 14px; border-radius:10px; border:none; cursor:pointer; }
+  </style>
 </head>
 
-<body class="p-4">
+<body>
+  <h2>Manager Panel</h2>
+  <a href="{{ url_for('logout') }}">Logout</a>
 
-<div class="container">
+  <div class="card">
+    <h3>Add Item</h3>
+    <form method="POST">
+      <input type="hidden" name="form_type" value="add_item">
 
-    <div class="d-flex justify-content-between mb-3">
-        <h2>Manager Panel</h2>
-        <a class="btn btn-outline-dark" href="{{ url_for('logout') }}">Logout</a>
-    </div>
+      Name <input name="name" required>
+      Stock <input type="number" name="stock" required>
+      Capital/unit <input type="number" step="0.01" name="capital" required>
+      Price <input type="number" step="0.01" name="price" required>
+      Cashier bonus/unit <input type="number" step="0.01" name="bonus" required>
+      <button>Add</button>
+    </form>
+  </div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for cat, msg in messages %}
-          <div class="alert alert-{{cat}}">{{ msg }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
+  <div class="card">
+    <h3>Items</h3>
+    <table>
+      <tr>
+        <th>Name</th><th>Stock</th><th>Capital</th><th>Price</th><th>Cashier Bonus</th>
+      </tr>
+      {% for i in items %}
+      <tr>
+        <td>{{ i.name }}</td>
+        <td>{{ i.stock }}</td>
+        <td>{{ i.capital_per_unit }}</td>
+        <td>{{ i.selling_price }}</td>
+        <td>{{ i.cashier_bonus }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
 
+  <div class="card">
+    <h3>Sales (Delete Only if Needed)</h3>
+    <table>
+      <tr>
+        <th>Date</th><th>Item</th><th>Qty</th><th>Total</th><th>Cashier Bonus</th><th>Action</th>
+      </tr>
 
-    <!-- ITEMS -->
-    <div class="card mb-4">
-        <div class="card-body">
-            <h5>Add Item</h5>
+      {% for s in sales %}
+      <tr>
+        <td>{{ s.date.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>{{ s.item.name }}</td>
+        <td>{{ s.quantity }}</td>
+        <td>{{ s.total_price }}</td>
+        <td>{{ s.cashier_bonus_earned }}</td>
+        <td>
+          <form method="POST" action="{{ url_for('delete_sale') }}">
+            <input type="hidden" name="sale_id" value="{{ s.id }}">
+            <button>Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
 
-            <form method="POST" action="{{ url_for('manager_add_item') }}" class="row g-2">
-                <div class="col-md-4">
-                    <input class="form-control" name="name" placeholder="Item name" required>
-                </div>
-                <div class="col-md-3">
-                    <input class="form-control" name="price" placeholder="Price" type="number" step="0.01" required>
-                </div>
-                <div class="col-md-3">
-                    <input class="form-control" name="stock" placeholder="Stock" type="number" required>
-                </div>
-                <div class="col-md-2">
-                    <button class="btn btn-primary w-100">Add</button>
-                </div>
-            </form>
+  <div class="card">
+    <h3>Monthly Summary</h3>
+    <p>Sales: ₱{{ monthly_sales }}</p>
+    <p>Expenses:</p>
+    <ul>
+      {% for k,v in expenses.items() %}
+      <li>{{ k }} — ₱{{ v }}</li>
+      {% endfor %}
+    </ul>
 
-            <hr>
+    <p>Total Expenses: ₱{{ total_expenses }}</p>
 
-            <table class="table table-hover">
-                <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Price</th>
-                    <th>Stock</th>
-                </tr>
-                </thead>
-                <tbody>
-                {% for item in items %}
-                    <tr>
-                        <td>{{ item.name }}</td>
-                        <td>{{ item.price }}</td>
-                        <td>{{ item.stock }}</td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-
-        </div>
-    </div>
-
-
-    <!-- EXPENSES -->
-    <div class="card mb-4">
-        <div class="card-body">
-            <h5>Add Expense</h5>
-
-            <form method="POST" action="{{ url_for('manager_add_expense') }}" class="row g-2">
-                <div class="col-md-6">
-                    <input class="form-control" name="name" placeholder="Expense name" required>
-                </div>
-                <div class="col-md-4">
-                    <input class="form-control" name="amount" placeholder="Amount" type="number" step="0.01" required>
-                </div>
-                <div class="col-md-2">
-                    <button class="btn btn-secondary w-100">Save</button>
-                </div>
-            </form>
-
-            <hr>
-
-            <table class="table">
-                <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Amount</th>
-                    <th>Month</th>
-                </tr>
-                </thead>
-                <tbody>
-                {% for e in expenses %}
-                    <tr>
-                        <td>{{ e.name }}</td>
-                        <td>{{ e.amount }}</td>
-                        <td>{{ e.month }}</td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-
-        </div>
-    </div>
-
-
-    <!-- SALES -->
-    <div class="card mb-5">
-        <div class="card-body">
-            <h5>Sales History</h5>
-
-            <table class="table table-bordered align-middle mt-3">
-                <thead class="table-light">
-                <tr>
-                    <th>#</th>
-                    <th>Item</th>
-                    <th>Qty</th>
-                    <th>Price</th>
-                    <th>Cashier</th>
-                    <th>Date</th>
-                    <th>Undo</th>
-                </tr>
-                </thead>
-
-                <tbody>
-                {% for s in sales %}
-                    <tr class="{% if s.is_deleted %}deleted-row{% endif %}">
-                        <td>{{ s.id }}</td>
-                        <td>{{ s.item_name }}</td>
-                        <td>{{ s.quantity }}</td>
-                        <td>{{ s.price }}</td>
-                        <td>{{ s.cashier }}</td>
-                        <td>{{ s.date.strftime('%Y-%m-%d %H:%M') }}</td>
-
-                        <td>
-                            {% if not s.is_deleted %}
-                                <form method="POST"
-                                      action="{{ url_for('delete_sale', sale_id=s.id) }}"
-                                      onsubmit="return confirm('Undo this sale? Cashier bonus will be deducted.');">
-                                    <button class="btn btn-danger btn-sm">
-                                        Undo
-                                    </button>
-                                </form>
-                            {% else %}
-                                <span class="badge bg-secondary">Undone</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-
-            </table>
-        </div>
-    </div>
-
-</div>
-
+    {% if profit >= 0 %}
+      <h3 class="green">Profit: ₱{{ profit }}</h3>
+    {% else %}
+      <h3 class="red">Loss: ₱{{ profit }}</h3>
+    {% endif %}
+  </div>
 </body>
 </html>
