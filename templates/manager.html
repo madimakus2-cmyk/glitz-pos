@@ -3,95 +3,65 @@
 <head>
   <title>Manager Panel</title>
   <style>
-    body { font-family: Arial; background:#111; color:#eee; }
-    .card { background:#1c1c1c; padding:20px; margin:10px; border-radius:14px; }
-    .green { color: #38f46a; }
-    .red { color: #ff5d5d; }
-    table { width:100%; border-collapse: collapse; }
-    th, td { padding:8px; border-bottom: 1px solid #333; }
-    input { padding:6px; border-radius:8px; border:none; }
-    button { padding:6px 14px; border-radius:10px; border:none; cursor:pointer; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 8px; }
   </style>
 </head>
-
 <body>
-  <h2>Manager Panel</h2>
-  <a href="{{ url_for('logout') }}">Logout</a>
+  <h1>Manager Panel</h1>
 
-  <div class="card">
-    <h3>Add Item</h3>
-    <form method="POST">
-      <input type="hidden" name="form_type" value="add_item">
+  <p>Total Sales: ${{ total_sales }}</p>
+  <p>Total Profit (after bonuses): ${{ total_profit }}</p>
 
-      Name <input name="name" required>
-      Stock <input type="number" name="stock" required>
-      Capital/unit <input type="number" step="0.01" name="capital" required>
-      Price <input type="number" step="0.01" name="price" required>
-      Cashier bonus/unit <input type="number" step="0.01" name="bonus" required>
-      <button>Add</button>
-    </form>
-  </div>
+  <h2>Inventory</h2>
+  <table>
+    <tr><th>Item</th><th>Price</th><th>Stock</th></tr>
+    {% for item in inventory %}
+    <tr>
+      <td>{{ item.name }}</td>
+      <td>{{ item.price }}</td>
+      <td>{{ item.stock }}</td>
+    </tr>
+    {% endfor %}
+  </table>
 
-  <div class="card">
-    <h3>Items</h3>
-    <table>
-      <tr>
-        <th>Name</th><th>Stock</th><th>Capital</th><th>Price</th><th>Cashier Bonus</th>
-      </tr>
-      {% for i in items %}
-      <tr>
-        <td>{{ i.name }}</td>
-        <td>{{ i.stock }}</td>
-        <td>{{ i.capital_per_unit }}</td>
-        <td>{{ i.selling_price }}</td>
-        <td>{{ i.cashier_bonus }}</td>
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
+  <h2>Sales</h2>
+  <table>
+    <tr>
+      <th>ID</th><th>Cashier</th><th>Item</th><th>Qty</th><th>Total</th><th>Status</th><th>Action</th>
+    </tr>
+    {% for s in sales %}
+    <tr>
+      <td>{{ s.id }}</td>
+      <td>{{ s.cashier }}</td>
+      <td>{{ s.item }}</td>
+      <td>{{ s.quantity }}</td>
+      <td>{{ s.total }}</td>
+      <td>
+        {% if s.deleted %} Deleted {% else %} Active {% endif %}
+      </td>
+      <td>
+        {% if not s.deleted %}
+        <form action="/delete_sale/{{ s.id }}" method="POST">
+          <button type="submit">Undo / Delete</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
 
-  <div class="card">
-    <h3>Sales (Delete Only if Needed)</h3>
-    <table>
-      <tr>
-        <th>Date</th><th>Item</th><th>Qty</th><th>Total</th><th>Cashier Bonus</th><th>Action</th>
-      </tr>
-
-      {% for s in sales %}
-      <tr>
-        <td>{{ s.date.strftime("%Y-%m-%d %H:%M") }}</td>
-        <td>{{ s.item.name }}</td>
-        <td>{{ s.quantity }}</td>
-        <td>{{ s.total_price }}</td>
-        <td>{{ s.cashier_bonus_earned }}</td>
-        <td>
-          <form method="POST" action="{{ url_for('delete_sale') }}">
-            <input type="hidden" name="sale_id" value="{{ s.id }}">
-            <button>Delete</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
-
-  <div class="card">
-    <h3>Monthly Summary</h3>
-    <p>Sales: ₱{{ monthly_sales }}</p>
-    <p>Expenses:</p>
+  <h2>Expenses</h2>
+  {% if expenses %}
     <ul>
-      {% for k,v in expenses.items() %}
-      <li>{{ k }} — ₱{{ v }}</li>
+      {% for k, v in expenses.items() %}
+        <li>{{ k }} - {{ v }}</li>
       {% endfor %}
     </ul>
+  {% else %}
+    <p>No expenses recorded.</p>
+  {% endif %}
 
-    <p>Total Expenses: ₱{{ total_expenses }}</p>
-
-    {% if profit >= 0 %}
-      <h3 class="green">Profit: ₱{{ profit }}</h3>
-    {% else %}
-      <h3 class="red">Loss: ₱{{ profit }}</h3>
-    {% endif %}
-  </div>
+  <p><a href="/logout">Logout</a></p>
 </body>
 </html>
