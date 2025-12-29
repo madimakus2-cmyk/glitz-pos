@@ -1,70 +1,104 @@
-import os
-from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, session, flash
-from flask_sqlalchemy import SQLAlchemy
+import sqlite3
+from flask import Flask, render_template, request, redirect, session, g
 
 app = Flask(__name__)
-app.secret_key = "secret-key"
-
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "database.db")
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-db = SQLAlchemy(app)
-
-# ------------------ MODELS ------------------
-
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True)
-    password = db.Column(db.String(80))
-    role = db.Column(db.String(20))   # manager or cashier
-    bonus_total = db.Column(db.Float, default=0.0)
+app.secret_key = "super-secret-key"
 
 
-class Item(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120))
-    stock = db.Column(db.Integer)
-    capital_per_unit = db.Column(db.Float)
-    selling_price = db.Column(db.Float)
-    cashier_bonus = db.Column(db.Float)   # bonus per unit sold to cashier
+# -----------------------
+# DB UTILITIES
+# -----------------------
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect("pos.db")
+        g.db.row_factory = sqlite3.Row
+    return g.db
 
 
-class Sale(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    item_id = db.Column(db.Integer, db.ForeignKey("item.id"))
-    qty = db.Column(db.Integer)
-    total_price = db.Column(db.Float)
-    profit = db.Column(db.Float)
-    bonus_given = db.Column(db.Float)
-    cashier_id = db.Column(db.Integer, db.ForeignKey("user.id"))
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-
-    item = db.relationship("Item")
-    cashier = db.relationship("User")
+@app.teardown_appcontext
+def close_db(exception):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
 
 
-# ------------------ LOGIN ------------------
+def init_db():
+    db = get_db()
 
-@app.route("/", methods=["GET", "POST"])
+    db.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            password TEXT,
+            role TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            price REAL,
+            stock INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS sales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cashier TEXT,
+            item TEXT,
+            quantity INTEGER,
+            total REAL,
+            deleted INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS bonuses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cashier TEXT,
+            sale_id INTEGER,
+            amount REAL,
+            active INTEGER DEFAULT 1
+        );
+        """
+    )
+
+    # seed manager if missing
+    cur = db.execute("SELECT 1 FROM users WHERE username=?", ("manager",))
+    if not cur.fetchone():
+        db.execute(
+            "INSERT INTO users(username,password,role) VALUES (?,?,?)",
+            ("manager", "admin123", "manager"),
+        )
+
+    db.commit()
+
+
+with app.app_context():
+    init_db()
+
+
+# -----------------------
+# AUTH
+# -----------------------
+@app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         username = request.form["username"]
         password = request.form["password"]
 
-        user = User.query.filter_by(username=username, password=password).first()
+        db = get_db()
+        user = db.execute(
+            "SELECT * FROM users WHERE username=? AND password=?",
+            (username, password),
+        ).fetchone()
 
-        if not user:
-            flash("Invalid credentials", "error")
-            return redirect(url_for("login"))
+        if user:
+            session["user"] = username
+            session["role"] = user["role"]
 
-        session["user_id"] = user.id
-        session["role"] = user.role
+            if user["role"] == "manager":
+                return redirect("/manager")
+            return redirect("/cashier")
 
-        if user.role == "manager":
-            return redirect(url_for("manager_panel"))
-        return redirect(url_for("cashier_panel"))
+        return "Invalid credentials"
 
     return render_template("login.html")
 
@@ -72,118 +106,130 @@ def login():
 @app.route("/logout")
 def logout():
     session.clear()
-    return redirect(url_for("login"))
+    return redirect("/login")
 
 
-# ------------------ CASHIER PANEL ------------------
-
+# -----------------------
+# CASHIER
+# -----------------------
 @app.route("/cashier", methods=["GET", "POST"])
-def cashier_panel():
+def cashier():
     if "role" not in session or session["role"] != "cashier":
-        return redirect(url_for("login"))
+        return redirect("/login")
 
-    items = Item.query.all()
+    db = get_db()
+    inventory = db.execute("SELECT * FROM inventory").fetchall()
 
     if request.method == "POST":
-        item_id = int(request.form["item"])
-        qty = int(request.form["qty"])
+        item_id = request.form["item_id"]
+        qty = int(request.form["quantity"])
 
-        item = Item.query.get(item_id)
+        item = db.execute("SELECT * FROM inventory WHERE id=?", (item_id,)).fetchone()
+        if not item or item["stock"] < qty:
+            return "Not enough stock"
 
-        if qty > item.stock:
-            flash("Not enough stock", "error")
-            return redirect(url_for("cashier_panel"))
-
-        cashier = User.query.get(session["user_id"])
-
-        total_price = item.selling_price * qty
-        profit = (item.selling_price - item.capital_per_unit) * qty
-        bonus = item.cashier_bonus * qty
+        total = item["price"] * qty
 
         # record sale
-        sale = Sale(
-            item_id=item.id,
-            qty=qty,
-            total_price=total_price,
-            profit=profit,
-            bonus_given=bonus,
-            cashier_id=cashier.id
+        db.execute(
+            "INSERT INTO sales(cashier,item,quantity,total) VALUES (?,?,?,?)",
+            (session["user"], item["name"], qty, total),
+        )
+        sale_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        # cashier bonus (example: 5% of sale)
+        bonus_amount = round(total * 0.05, 2)
+        db.execute(
+            "INSERT INTO bonuses(cashier,sale_id,amount) VALUES (?,?,?)",
+            (session["user"], sale_id, bonus_amount),
         )
 
-        item.stock -= qty
-        cashier.bonus_total += bonus
+        # update stock
+        db.execute(
+            "UPDATE inventory SET stock = stock - ? WHERE id=?",
+            (qty, item_id),
+        )
 
-        db.session.add(sale)
-        db.session.commit()
+        db.commit()
 
-        flash("Sale recorded", "success")
+        return redirect("/cashier")
 
-    return render_template("cashier.html", items=items)
+    return render_template("cashier.html", inventory=inventory)
 
 
-# ------------------ MANAGER PANEL ------------------
-
+# -----------------------
+# MANAGER PANEL
+# -----------------------
 @app.route("/manager")
 def manager_panel():
     if "role" not in session or session["role"] != "manager":
-        return redirect(url_for("login"))
+        return redirect("/login")
 
-    items = Item.query.all()
-    sales = Sale.query.order_by(Sale.timestamp.desc()).all()
-    users = User.query.all()
+    db = get_db()
 
-    total_profit = sum(s.profit for s in sales)
+    sales = db.execute(
+        "SELECT * FROM sales ORDER BY id DESC"
+    ).fetchall()
+
+    inventory = db.execute("SELECT * FROM inventory").fetchall()
+
+    total_sales = db.execute(
+        "SELECT COALESCE(SUM(total),0) FROM sales WHERE deleted=0"
+    ).fetchone()[0]
+
+    # total bonuses currently active
+    total_bonuses = db.execute(
+        "SELECT COALESCE(SUM(amount),0) FROM bonuses WHERE active=1"
+    ).fetchone()[0]
+
+    total_profit = round(total_sales - total_bonuses, 2)
+
+    # 👇 prevents your previous crash
+    expenses = {}
 
     return render_template(
         "manager.html",
-        items=items,
         sales=sales,
-        users=users,
+        inventory=inventory,
+        total_sales=total_sales,
         total_profit=total_profit,
+        expenses=expenses,
     )
 
 
-# ----------- DELETE SALE (MANAGER ONLY) ------------
-
+# -----------------------
+# DELETE (UNDO) A SALE
+# -----------------------
 @app.route("/delete_sale/<int:sale_id>", methods=["POST"])
 def delete_sale(sale_id):
     if "role" not in session or session["role"] != "manager":
-        return redirect(url_for("login"))
+        return redirect("/login")
 
-    sale = Sale.query.get_or_404(sale_id)
+    db = get_db()
 
-    # restore stock
-    sale.item.stock += sale.qty
+    sale = db.execute("SELECT * FROM sales WHERE id=?", (sale_id,)).fetchone()
+    if not sale or sale["deleted"] == 1:
+        return redirect("/manager")
 
-    # remove cashier bonus that was given for this sale
-    if sale.cashier:
-        sale.cashier.bonus_total -= sale.bonus_given
-        if sale.cashier.bonus_total < 0:
-            sale.cashier.bonus_total = 0
+    # mark sale deleted
+    db.execute("UPDATE sales SET deleted=1 WHERE id=?", (sale_id,))
 
-    db.session.delete(sale)
-    db.session.commit()
+    # restore inventory
+    db.execute(
+        "UPDATE inventory SET stock = stock + ? WHERE name=?",
+        (sale["quantity"], sale["item"]),
+    )
 
-    flash("Sale deleted and bonuses corrected.", "success")
-    return redirect(url_for("manager_panel"))
+    # cancel cashier bonus
+    db.execute(
+        "UPDATE bonuses SET active=0 WHERE sale_id=?",
+        (sale_id,),
+    )
 
+    db.commit()
 
-# ------------------ DB AUTO CREATE ------------------
+    return redirect("/manager")
 
-with app.app_context():
-    db.create_all()
-
-    # default users
-    if not User.query.filter_by(username="manager").first():
-        db.session.add(User(username="manager", password="manager", role="manager"))
-
-    if not User.query.filter_by(username="cashier").first():
-        db.session.add(User(username="cashier", password="cashier", role="cashier"))
-
-    db.session.commit()
-
-
-# ------------------ RUN ------------------
 
 if __name__ == "__main__":
     app.run(debug=True)
